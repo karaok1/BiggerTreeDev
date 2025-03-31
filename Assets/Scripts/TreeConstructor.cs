@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Utils;
 
 public class TreeConstructor : MonoBehaviour
 {
@@ -9,35 +10,43 @@ public class TreeConstructor : MonoBehaviour
     [SerializeField] private int iterations = 1;
     [SerializeField] private float stepDistance = 1f;
     [SerializeField] private float angle = 25f;
+    [SerializeField] private GameObject fruit;
 
     private string _dna = "X";
-    private List<Vector3> linePoints = new List<Vector3>();
-    private List<GameObject> sphereList = new List<GameObject>();
+
+    private readonly List<List<Vector3>> _branches = new();
+    private readonly Stack<(Vector3 pos, Vector3 heading, int branchIndex)> _stateStack = new();
 
     public void Start()
+    {
+        GenerateTree();
+    }
+
+    public void GenerateTree()
     {
         _dna = "X";
         for (int i = 0; i < iterations; i++)
         {
-            _dna = Generate();
+            _dna = GenerateDna();
         }
 
+        DestroyPreviousTree();
         BuildTree();
         DrawTree();
     }
 
-    public string Generate()
+    public string GenerateDna()
     {
         var next = "";
         foreach (var c in _dna)
         {
             if (c.ToString() == nameof(Rules.X))
             {
-                next += ChooseOne(Rules.X);
+                next += Helper.ChooseOne(Rules.X);
             }
             else if (c.ToString() == nameof(Rules.F))
             {
-                next += ChooseOne(Rules.F);;
+                next += Helper.ChooseOne(Rules.F);;
             }
             else
             {
@@ -49,38 +58,41 @@ public class TreeConstructor : MonoBehaviour
         return next;
     }
 
-    private string ChooseOne(Dictionary<string, float> dictionary)
-    {
-        var r = UnityEngine.Random.Range(0f, 1f);
-        var total = 0f;
-        foreach (var probability in dictionary.Values)
-        {
-            total += probability;
-
-            if (total > r)
-            {
-                return dictionary.Keys.ElementAt(dictionary.Values.ToList().IndexOf(probability));
-            }
-        }
-
-        throw new Exception("No valid choice found");
-    }
-
     private void BuildTree()
     {
-        linePoints.Clear();
-
+        _branches.Clear();
+        _branches.Add(new List<Vector3>()); // Main branch
+        int currentBranchIndex = 0;
         Vector3 position = Vector3.zero;
         Vector3 heading = Vector3.up;
-        Stack<(Vector3 pos, Vector3 head)> stateStack = new();
+        _stateStack.Clear();
+
+        // Initialize main branch with starting position
+        _branches[currentBranchIndex].Add(position);
 
         foreach (char c in _dna)
         {
             switch (c)
             {
+                case 'A':
+                    var fruitA = Instantiate(fruit, transform);
+                    fruitA.transform.localPosition = position;
+                    fruitA.GetComponent<SpriteRenderer>().color = Color.red;
+                    fruitA.name = "FruitA";
+                    Debug.Log(fruitA.name + " " + position);
+                    break;
+
+                case 'B':
+                    var fruitB = Instantiate(fruit, transform);
+                    fruitB.transform.localPosition = position;
+                    fruitB.GetComponent<SpriteRenderer>().color = Color.blue;
+                    fruitB.name = "FruitB";
+                    Debug.Log(fruitB.name + " " + position);
+                    break;
+
                 case 'F':
                     Vector3 nextPosition = position + heading * stepDistance;
-                    linePoints.Add(position);
+                    _branches[currentBranchIndex].Add(nextPosition);
                     position = nextPosition;
                     break;
 
@@ -93,18 +105,20 @@ public class TreeConstructor : MonoBehaviour
                     break;
 
                 case '[':
-                    stateStack.Push((position, heading));
+                    _stateStack.Push((position, heading, currentBranchIndex));
+                    _branches.Add(new List<Vector3>());
+                    currentBranchIndex = _branches.Count - 1;
+                    _branches[currentBranchIndex].Add(position); // Start new branch
                     break;
 
                 case ']':
-                    if (stateStack.Count > 0)
+                    if (_stateStack.Count > 0)
                     {
-                        (position, heading) = stateStack.Pop();
+                        var state = _stateStack.Pop();
+                        position = state.pos;
+                        heading = state.heading;
+                        currentBranchIndex = state.branchIndex;
                     }
-
-                    break;
-
-                default:
                     break;
             }
         }
@@ -112,22 +126,14 @@ public class TreeConstructor : MonoBehaviour
 
     public void DrawTree()
     {
-        DestroyPreviousTree();
-
-        GameObject lineObj = Instantiate(lineRendererPrefab, transform);
-        LineRenderer lineRenderer = lineObj.GetComponent<LineRenderer>();
-        lineRenderer.positionCount = linePoints.Count;
-
-        for (int i = 0; i < linePoints.Count; i++)
+        foreach (var branch in _branches)
         {
-            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            sphere.transform.position = linePoints[i];
-            sphere.transform.localScale = new Vector3(1f, 1f, 1f) * 0.1f;
-            sphere.transform.SetParent(transform);
-            sphere.name = "Joint_" + i.ToString();
-            sphereList.Add(sphere);
+            if (branch.Count < 2) continue; // Skip branches with less than 2 points
 
-            lineRenderer.SetPosition(i, linePoints[i]);
+            GameObject lineObj = Instantiate(lineRendererPrefab, transform);
+            LineRenderer lineRenderer = lineObj.GetComponent<LineRenderer>();
+            lineRenderer.positionCount = branch.Count;
+            lineRenderer.SetPositions(branch.ToArray());
         }
     }
 
@@ -136,10 +142,11 @@ public class TreeConstructor : MonoBehaviour
         int childCount = transform.childCount;
         for (int i = childCount - 1; i >= 0; i--)
         {
+            GameObject child = transform.GetChild(i).gameObject;
             if (Application.isPlaying)
-                Destroy(transform.GetChild(i).gameObject);
+                Destroy(child);
             else
-                DestroyImmediate(transform.GetChild(i).gameObject);
+                DestroyImmediate(child);
         }
     }
 }
