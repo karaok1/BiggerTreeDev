@@ -21,6 +21,11 @@ public class TreeConstructor : MonoBehaviour
     [SerializeField] private int maxGenerations = 5;
     [SerializeField] private float growthPercent = 0f;
 
+    private List<GameObject> lineRendererPool = new List<GameObject>(); // Pool of inactive LineRenderer GameObjects
+    private List<GameObject> fruitPool = new List<GameObject>(); // Pool of inactive fruit GameObjects
+    private List<GameObject> activeLineRenderers = new List<GameObject>(); // Currently active LineRenderers
+    private List<GameObject> activeFruits = new List<GameObject>(); // Currently active fruits
+
     private string _dna = "X";
 
     private readonly List<Branch> _branches = new();
@@ -70,7 +75,8 @@ public class TreeConstructor : MonoBehaviour
             }
             else if (c.ToString() == nameof(Rules.F))
             {
-                next += Helper.ChooseOne(Rules.F);;
+                next += Helper.ChooseOne(Rules.F);
+                ;
             }
             else if (c.ToString() == "(" || c.ToString() == ")")
             {
@@ -89,7 +95,8 @@ public class TreeConstructor : MonoBehaviour
     private void BuildTree()
     {
         _branches.Clear();
-        _branches.Add(new Branch { Depth = 0, Points = new List<Vector3>(), Fruits = new List<Fruit>() }); // Main branch
+        _branches.Add(new Branch
+            { Depth = 0, Points = new List<Vector3>(), Fruits = new List<Fruit>() }); // Main branch
         int currentBranchIndex = 0;
         Vector3 position = Vector3.zero;
         Vector3 heading = Vector3.up;
@@ -111,15 +118,31 @@ public class TreeConstructor : MonoBehaviour
                     continue;
                 case 'A':
                     if (lerpOn)
-                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple, Lerp = growthPercent });
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit
+                        {
+                            Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple,
+                            Lerp = growthPercent
+                        });
                     else
-                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple, Lerp = 1f });
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit
+                        {
+                            Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple,
+                            Lerp = 1f
+                        });
                     break;
                 case 'B':
                     if (lerpOn)
-                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana, Lerp = growthPercent });
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit
+                        {
+                            Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana,
+                            Lerp = growthPercent
+                        });
                     else
-                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana, Lerp = 1f });
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit
+                        {
+                            Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana,
+                            Lerp = 1f
+                        });
                     break;
                 case 'F':
                     float step = lerpOn ? stepDistance * growthPercent : stepDistance;
@@ -137,7 +160,11 @@ public class TreeConstructor : MonoBehaviour
                     break;
                 case '[':
                     _stateStack.Push(new State { Pos = position, Heading = heading, BranchIndex = currentBranchIndex });
-                    _branches.Add(new Branch { Depth = _branches[currentBranchIndex].Depth + 1, Points = new List<Vector3>(), Fruits = new List<Fruit>() });
+                    _branches.Add(new Branch
+                    {
+                        Depth = _branches[currentBranchIndex].Depth + 1, Points = new List<Vector3>(),
+                        Fruits = new List<Fruit>()
+                    });
                     currentBranchIndex = _branches.Count - 1;
                     _branches[currentBranchIndex].Points.Add(position);
                     break;
@@ -149,6 +176,7 @@ public class TreeConstructor : MonoBehaviour
                         heading = state.Heading;
                         currentBranchIndex = state.BranchIndex;
                     }
+
                     break;
             }
         }
@@ -160,7 +188,19 @@ public class TreeConstructor : MonoBehaviour
         {
             if (branch.Points.Count < 2) continue;
 
-            GameObject lineObj = Instantiate(lineRendererPrefab, transform);
+            // Get or create LineRenderer GameObject
+            GameObject lineObj;
+            if (lineRendererPool.Count > 0)
+            {
+                lineObj = lineRendererPool[0];
+                lineRendererPool.RemoveAt(0);
+                lineObj.SetActive(true);
+            }
+            else
+            {
+                lineObj = Instantiate(lineRendererPrefab, transform);
+            }
+
             lineObj.name = $"Branch_{branch.Depth}_{_branches.IndexOf(branch)}";
             LineRenderer lineRenderer = lineObj.GetComponent<LineRenderer>();
             lineRenderer.positionCount = branch.Points.Count;
@@ -171,10 +211,25 @@ public class TreeConstructor : MonoBehaviour
             lineRenderer.widthMultiplier = startWidth;
             lineRenderer.widthCurve = AnimationCurve.Linear(0f, 1f, 1f, endWidth / startWidth);
 
+            activeLineRenderers.Add(lineObj);
+
+            // Handle fruits
             foreach (var f in branch.Fruits)
             {
                 Vector3 position = branch.Points[f.Position];
-                GameObject fruitObj = Instantiate(fruit, transform);
+
+                GameObject fruitObj;
+                if (fruitPool.Count > 0)
+                {
+                    fruitObj = fruitPool[0];
+                    fruitPool.RemoveAt(0);
+                    fruitObj.SetActive(true);
+                }
+                else
+                {
+                    fruitObj = Instantiate(fruit, transform);
+                }
+
                 fruitObj.transform.localPosition = position;
                 SpriteRenderer sr = fruitObj.GetComponent<SpriteRenderer>();
                 float size = f.Lerp * 0.5f;
@@ -190,6 +245,8 @@ public class TreeConstructor : MonoBehaviour
                     sr.color = Color.yellow;
                     fruitObj.name = "FruitB";
                 }
+
+                activeFruits.Add(fruitObj);
             }
         }
     }
@@ -210,14 +267,22 @@ public class TreeConstructor : MonoBehaviour
 
     private void DestroyPreviousTree()
     {
-        int childCount = transform.childCount;
-        for (int i = childCount - 1; i >= 0; i--)
+        // Deactivate and pool LineRenderers
+        foreach (var lr in activeLineRenderers)
         {
-            GameObject child = transform.GetChild(i).gameObject;
-            if (Application.isPlaying)
-                Destroy(child);
-            else
-                DestroyImmediate(child);
+            lr.SetActive(false);
+            lineRendererPool.Add(lr);
         }
+
+        activeLineRenderers.Clear();
+
+        // Deactivate and pool fruits
+        foreach (var fruit in activeFruits)
+        {
+            fruit.SetActive(false);
+            fruitPool.Add(fruit);
+        }
+
+        activeFruits.Clear();
     }
 }
