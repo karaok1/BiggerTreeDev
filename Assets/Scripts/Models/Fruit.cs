@@ -6,5 +6,6 @@ namespace Models
     {
         public int Position { get; set; }
         public FruitType FruitType { get; set; }
+        public float Lerp { get; set; }
     }
 }

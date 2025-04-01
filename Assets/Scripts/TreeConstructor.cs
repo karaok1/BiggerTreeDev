@@ -9,13 +9,17 @@ using Utils;
 public class TreeConstructor : MonoBehaviour
 {
     [SerializeField] private GameObject lineRendererPrefab;
-    [SerializeField] private int iterations = 1;
     [SerializeField] private float stepDistance = 1f;
     [SerializeField] private float angle = 25f;
     [SerializeField] private GameObject fruit;
     [SerializeField] private float baseWidth = 0.5f;
     [SerializeField] private float widthDecay = 0.7f;
     [SerializeField] private float taperFactor = 0.5f;
+    [SerializeField] private float growthRate = 0.04f;
+
+    [SerializeField] private int currentGeneration = 0;
+    [SerializeField] private int maxGenerations = 5;
+    [SerializeField] private float growthPercent = 0f;
 
     private string _dna = "X";
 
@@ -27,17 +31,32 @@ public class TreeConstructor : MonoBehaviour
         GenerateTree();
     }
 
+    private void Update()
+    {
+        if (growthPercent < 1f)
+        {
+            float mod = currentGeneration + growthPercent;
+            growthPercent += growthRate / (mod > 0 ? mod : 1);
+            DestroyPreviousTree();
+            BuildTree();
+            DrawTree();
+        }
+        else
+        {
+            GenerateNextDna();
+            growthPercent = 0f;
+            DestroyPreviousTree();
+            BuildTree();
+            DrawTree();
+        }
+    }
+
     public void GenerateTree()
     {
         _dna = "X";
-        for (int i = 0; i < iterations; i++)
-        {
-            _dna = GenerateDna();
-        }
-
-        DestroyPreviousTree();
-        BuildTree();
-        DrawTree();
+        currentGeneration = 0;
+        growthPercent = 0f;
+        GenerateNextDna();
     }
 
     public string GenerateDna()
@@ -52,6 +71,10 @@ public class TreeConstructor : MonoBehaviour
             else if (c.ToString() == nameof(Rules.F))
             {
                 next += Helper.ChooseOne(Rules.F);;
+            }
+            else if (c.ToString() == "(" || c.ToString() == ")")
+            {
+                // Ignore parentheses
             }
             else
             {
@@ -74,46 +97,50 @@ public class TreeConstructor : MonoBehaviour
 
         // Initialize main branch with starting position
         _branches[currentBranchIndex].Points.Add(position);
+        bool lerpOn = false;
 
         foreach (char c in _dna)
         {
             switch (c)
             {
+                case '(':
+                    lerpOn = true;
+                    continue;
+                case ')':
+                    lerpOn = false;
+                    continue;
                 case 'A':
-                    _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple });
+                    if (lerpOn)
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple, Lerp = growthPercent });
+                    else
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple, Lerp = 1f });
                     break;
-
                 case 'B':
-                    _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana });
+                    if (lerpOn)
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana, Lerp = growthPercent });
+                    else
+                        _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana, Lerp = 1f });
                     break;
-
                 case 'F':
-                    Vector3 nextPosition = position + heading * stepDistance;
+                    float step = lerpOn ? stepDistance * growthPercent : stepDistance;
+                    Vector3 nextPosition = position + heading * step;
                     _branches[currentBranchIndex].Points.Add(nextPosition);
                     position = nextPosition;
                     break;
-
                 case '+':
-                    heading = Quaternion.AngleAxis(angle, Vector3.forward) * heading;
+                    float rotAngle = lerpOn ? angle * growthPercent : angle;
+                    heading = Quaternion.AngleAxis(rotAngle, Vector3.forward) * heading;
                     break;
-
                 case '-':
-                    heading = Quaternion.AngleAxis(-angle, Vector3.forward) * heading;
+                    float negAngle = lerpOn ? -angle * growthPercent : -angle;
+                    heading = Quaternion.AngleAxis(negAngle, Vector3.forward) * heading;
                     break;
-
                 case '[':
-                    var currentState = new State()
-                    {
-                        Pos = position,
-                        Heading = heading,
-                        BranchIndex = currentBranchIndex
-                    };
-                    _stateStack.Push(currentState);
-                    _branches.Add(new Branch() { Depth = _branches[currentBranchIndex].Depth + 1, Points = new List<Vector3>(), Fruits = new List<Fruit>() });
-                    currentBranchIndex = _branches.Count - 1; // Increase branch index
-                    _branches[currentBranchIndex].Points.Add(position); // Start new branch
+                    _stateStack.Push(new State { Pos = position, Heading = heading, BranchIndex = currentBranchIndex });
+                    _branches.Add(new Branch { Depth = _branches[currentBranchIndex].Depth + 1, Points = new List<Vector3>(), Fruits = new List<Fruit>() });
+                    currentBranchIndex = _branches.Count - 1;
+                    _branches[currentBranchIndex].Points.Add(position);
                     break;
-
                 case ']':
                     if (_stateStack.Count > 0)
                     {
@@ -127,14 +154,14 @@ public class TreeConstructor : MonoBehaviour
         }
     }
 
-    public void DrawTree()
+    private void DrawTree()
     {
         foreach (var branch in _branches)
         {
-            if (branch.Points.Count < 2) continue; // Skip branches with less than 2 points
+            if (branch.Points.Count < 2) continue;
 
             GameObject lineObj = Instantiate(lineRendererPrefab, transform);
-            lineObj.name = "Branch_" + branch.Depth + "_" + _branches.IndexOf(branch);
+            lineObj.name = $"Branch_{branch.Depth}_{_branches.IndexOf(branch)}";
             LineRenderer lineRenderer = lineObj.GetComponent<LineRenderer>();
             lineRenderer.positionCount = branch.Points.Count;
             lineRenderer.SetPositions(branch.Points.ToArray());
@@ -150,6 +177,9 @@ public class TreeConstructor : MonoBehaviour
                 GameObject fruitObj = Instantiate(fruit, transform);
                 fruitObj.transform.localPosition = position;
                 SpriteRenderer sr = fruitObj.GetComponent<SpriteRenderer>();
+                float size = f.Lerp * 0.5f;
+                fruitObj.transform.localScale = new Vector3(size, size, 1f);
+
                 if (f.FruitType == FruitType.Apple)
                 {
                     sr.color = Color.red;
@@ -160,9 +190,22 @@ public class TreeConstructor : MonoBehaviour
                     sr.color = Color.yellow;
                     fruitObj.name = "FruitB";
                 }
-                Debug.Log(fruitObj.name + " " + position);
             }
         }
+    }
+
+    private void GenerateNextDna()
+    {
+        if (currentGeneration >= maxGenerations)
+        {
+            _dna = "X";
+            currentGeneration = 0;
+            growthPercent = 0f;
+            return;
+        }
+
+        _dna = GenerateDna();
+        currentGeneration++;
     }
 
     private void DestroyPreviousTree()
