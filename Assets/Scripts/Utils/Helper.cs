@@ -1,27 +1,28 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Models;
 
 namespace Utils
 {
     public static class Helper
     {
-        public static string ChooseOne(Dictionary<string, float> dictionary)
+        public static string ChooseOne(List<Rule> rules)
         {
-            var r = UnityEngine.Random.Range(0f, 1f);
-            var total = 0f;
+            float total = rules.Sum(r => r.Probability);
+            float randomPoint = UnityEngine.Random.Range(0f, total);
+            float cumulative = 0f;
 
-            for (var i = 0; i < dictionary.Count; i++)
+            foreach (var rule in rules)
             {
-                total += dictionary.ElementAt(i).Value;
-
-                if (total > r)
+                cumulative += rule.Probability;
+                if (randomPoint <= cumulative)
                 {
-                    return dictionary.ElementAt(i).Key;
+                    return rule.Value;
                 }
             }
 
-            throw new Exception("No valid choice found");
+            return rules.Last().Value;
         }
     }
 }

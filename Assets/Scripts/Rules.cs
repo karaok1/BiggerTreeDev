@@ -1,23 +1,23 @@
 using System.Collections.Generic;
+using Models;
 
 public static class Rules
 {
-    public static Dictionary<string, float> X = new()
+    public static List<Rule> X = new List<Rule>
     {
-        { "F[+X][-X]FX", 0.5f },
-        { "F[-X]FX", 0.05f },
-        { "F[+X]FX", 0.05f },
-        { "F[++X][-X]FX", 0.1f },
-        { "F[+X][--X]FX", 0.1f },
-
-        { "F[+X][-X]FB", 0.1f },
-        { "F[+X][-X]FA", 0.1f },
+        new Rule { Value = "(F[+X][-X]FX)", Probability = 0.5f },
+        new Rule { Value = "(F[-X]FX)", Probability = 0.05f },
+        new Rule { Value = "(F[+X]FX)", Probability = 0.05f },
+        new Rule { Value = "(F[++X][-X]FX)", Probability = 0.1f },
+        new Rule { Value = "(F[+X][--X]FX)", Probability = 0.1f },
+        new Rule { Value = "(F[+X][-X]FXA)", Probability = 0.1f },
+        new Rule { Value = "(F[+X][-X]FXB)", Probability = 0.1f },
     };
 
-    public static Dictionary<string, float> F = new()
+    public static List<Rule> F = new List<Rule>
     {
-        { "FF", 0.85f },
-        { "FFF", 0.05f },
-        { "F", 0.1f },
+        new Rule { Value = "F(F)", Probability = 0.85f },
+        new Rule { Value = "F(FF)", Probability = 0.05f },
+        new Rule { Value = "F", Probability = 0.1f },
     };
 }
