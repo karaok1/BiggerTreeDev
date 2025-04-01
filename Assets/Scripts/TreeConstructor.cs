@@ -11,11 +11,14 @@ public class TreeConstructor : MonoBehaviour
     [SerializeField] private float stepDistance = 1f;
     [SerializeField] private float angle = 25f;
     [SerializeField] private GameObject fruit;
+    [SerializeField] private float baseWidth = 0.5f;
+    [SerializeField] private float widthDecay = 0.7f;
+    [SerializeField] private float taperFactor = 0.5f;
 
     private string _dna = "X";
 
-    private readonly List<List<Vector3>> _branches = new();
-    private readonly Stack<(Vector3 pos, Vector3 heading, int branchIndex)> _stateStack = new();
+    private readonly List<Branch> _branches = new();
+    private readonly Stack<State> _stateStack = new();
 
     public void Start()
     {
@@ -61,38 +64,30 @@ public class TreeConstructor : MonoBehaviour
     private void BuildTree()
     {
         _branches.Clear();
-        _branches.Add(new List<Vector3>()); // Main branch
+        _branches.Add(new Branch { Depth = 0, Points = new List<Vector3>(), Fruits = new List<Fruit>() }); // Main branch
         int currentBranchIndex = 0;
         Vector3 position = Vector3.zero;
         Vector3 heading = Vector3.up;
         _stateStack.Clear();
 
         // Initialize main branch with starting position
-        _branches[currentBranchIndex].Add(position);
+        _branches[currentBranchIndex].Points.Add(position);
 
         foreach (char c in _dna)
         {
             switch (c)
             {
                 case 'A':
-                    var fruitA = Instantiate(fruit, transform);
-                    fruitA.transform.localPosition = position;
-                    fruitA.GetComponent<SpriteRenderer>().color = Color.red;
-                    fruitA.name = "FruitA";
-                    Debug.Log(fruitA.name + " " + position);
+                    _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Apple });
                     break;
 
                 case 'B':
-                    var fruitB = Instantiate(fruit, transform);
-                    fruitB.transform.localPosition = position;
-                    fruitB.GetComponent<SpriteRenderer>().color = Color.blue;
-                    fruitB.name = "FruitB";
-                    Debug.Log(fruitB.name + " " + position);
+                    _branches[currentBranchIndex].Fruits.Add(new Fruit { Position = _branches[currentBranchIndex].Points.Count - 1, FruitType = FruitType.Banana });
                     break;
 
                 case 'F':
                     Vector3 nextPosition = position + heading * stepDistance;
-                    _branches[currentBranchIndex].Add(nextPosition);
+                    _branches[currentBranchIndex].Points.Add(nextPosition);
                     position = nextPosition;
                     break;
 
@@ -105,19 +100,25 @@ public class TreeConstructor : MonoBehaviour
                     break;
 
                 case '[':
-                    _stateStack.Push((position, heading, currentBranchIndex));
-                    _branches.Add(new List<Vector3>());
-                    currentBranchIndex = _branches.Count - 1;
-                    _branches[currentBranchIndex].Add(position); // Start new branch
+                    var currentState = new State()
+                    {
+                        Pos = position,
+                        Heading = heading,
+                        BranchIndex = currentBranchIndex
+                    };
+                    _stateStack.Push(currentState);
+                    _branches.Add(new Branch() { Depth = _branches[currentBranchIndex].Depth + 1, Points = new List<Vector3>(), Fruits = new List<Fruit>() });
+                    currentBranchIndex = _branches.Count - 1; // Increase branch index
+                    _branches[currentBranchIndex].Points.Add(position); // Start new branch
                     break;
 
                 case ']':
                     if (_stateStack.Count > 0)
                     {
                         var state = _stateStack.Pop();
-                        position = state.pos;
-                        heading = state.heading;
-                        currentBranchIndex = state.branchIndex;
+                        position = state.Pos;
+                        heading = state.Heading;
+                        currentBranchIndex = state.BranchIndex;
                     }
                     break;
             }
@@ -128,12 +129,37 @@ public class TreeConstructor : MonoBehaviour
     {
         foreach (var branch in _branches)
         {
-            if (branch.Count < 2) continue; // Skip branches with less than 2 points
+            if (branch.Points.Count < 2) continue; // Skip branches with less than 2 points
 
             GameObject lineObj = Instantiate(lineRendererPrefab, transform);
+            lineObj.name = "Branch_" + branch.Depth + "_" + _branches.IndexOf(branch);
             LineRenderer lineRenderer = lineObj.GetComponent<LineRenderer>();
-            lineRenderer.positionCount = branch.Count;
-            lineRenderer.SetPositions(branch.ToArray());
+            lineRenderer.positionCount = branch.Points.Count;
+            lineRenderer.SetPositions(branch.Points.ToArray());
+
+            float startWidth = baseWidth * Mathf.Pow(widthDecay, branch.Depth);
+            float endWidth = startWidth * taperFactor;
+            lineRenderer.widthMultiplier = startWidth;
+            lineRenderer.widthCurve = AnimationCurve.Linear(0f, 1f, 1f, endWidth / startWidth);
+
+            foreach (var f in branch.Fruits)
+            {
+                Vector3 position = branch.Points[f.Position];
+                GameObject fruitObj = Instantiate(fruit, transform);
+                fruitObj.transform.localPosition = position;
+                SpriteRenderer sr = fruitObj.GetComponent<SpriteRenderer>();
+                if (f.FruitType == FruitType.Apple)
+                {
+                    sr.color = Color.red;
+                    fruitObj.name = "FruitA";
+                }
+                else if (f.FruitType == FruitType.Banana)
+                {
+                    sr.color = Color.yellow;
+                    fruitObj.name = "FruitB";
+                }
+                Debug.Log(fruitObj.name + " " + position);
+            }
         }
     }
 
