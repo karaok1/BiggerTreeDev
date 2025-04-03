@@ -12,7 +12,7 @@ namespace Editor
             if (GUILayout.Button("Generate"))
             {
                 var treeConstructor = (TreeConstructor)target;
-                treeConstructor.Start();
+                treeConstructor.GenerateTreeInstantly();
             }
         }
     }

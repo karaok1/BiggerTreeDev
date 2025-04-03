@@ -4,11 +4,13 @@ using System.Linq;
 using Enums;
 using Models;
 using UnityEngine;
+using UnityEngine.Profiling;
+using UnityEngine.Serialization;
 using Utils;
 
 public class TreeConstructor : MonoBehaviour
 {
-    [SerializeField] private GameObject lineRendererPrefab;
+    [SerializeField] private LineRenderer lineRendererPrefab;
     [SerializeField] private float stepDistance = 1f;
     [SerializeField] private float angle = 25f;
     [SerializeField] private GameObject fruit;
@@ -19,12 +21,12 @@ public class TreeConstructor : MonoBehaviour
 
     [SerializeField] private int currentGeneration = 0;
     [SerializeField] private int maxGenerations = 5;
-    [SerializeField] private float growthPercent = 0f;
+    [SerializeField] public float growthPercent = 0f;
+    public float GrowthPercent => growthPercent;
+    public int CurrentGeneration => currentGeneration;
 
-    private List<GameObject> lineRendererPool = new List<GameObject>(); // Pool of inactive LineRenderer GameObjects
-    private List<GameObject> fruitPool = new List<GameObject>(); // Pool of inactive fruit GameObjects
-    private List<GameObject> activeLineRenderers = new List<GameObject>(); // Currently active LineRenderers
-    private List<GameObject> activeFruits = new List<GameObject>(); // Currently active fruits
+    private List<LineRenderer> lineRendererPool = new List<LineRenderer>();
+    private List<GameObject> fruitPool = new List<GameObject>();
 
     private string _dna = "X";
 
@@ -42,15 +44,17 @@ public class TreeConstructor : MonoBehaviour
         {
             float mod = currentGeneration + growthPercent;
             growthPercent += growthRate / (mod > 0 ? mod : 1);
-            DestroyPreviousTree();
+            Profiler.BeginSample("BuildTree");
             BuildTree();
+            Profiler.EndSample();
+            Profiler.BeginSample("DrawTree");
             DrawTree();
+            Profiler.EndSample();
         }
         else
         {
             GenerateNextDna();
             growthPercent = 0f;
-            DestroyPreviousTree();
             BuildTree();
             DrawTree();
         }
@@ -62,6 +66,21 @@ public class TreeConstructor : MonoBehaviour
         currentGeneration = 0;
         growthPercent = 0f;
         GenerateNextDna();
+    }
+
+    public void GenerateTreeInstantly()
+    {
+        _dna = "X";
+        currentGeneration = 0;
+        growthPercent = 0f;
+        for (var i = 0; i < 5; i++)
+        {
+            _dna = GenerateDna();
+        }
+
+        GenerateNextDna();
+        BuildTree();
+        DrawTree();
     }
 
     public string GenerateDna()
@@ -184,69 +203,70 @@ public class TreeConstructor : MonoBehaviour
 
     private void DrawTree()
     {
+        int branchIndex = 0;
         foreach (var branch in _branches)
         {
             if (branch.Points.Count < 2) continue;
 
-            // Get or create LineRenderer GameObject
-            GameObject lineObj;
-            if (lineRendererPool.Count > 0)
+            LineRenderer lineRenderer;
+            // Reuse existing LineRenderer if available
+            if (branchIndex < lineRendererPool.Count)
             {
-                lineObj = lineRendererPool[0];
-                lineRendererPool.RemoveAt(0);
-                lineObj.SetActive(true);
+                lineRenderer = lineRendererPool[branchIndex];
             }
             else
             {
-                lineObj = Instantiate(lineRendererPrefab, transform);
+                lineRenderer = Instantiate(lineRendererPrefab, transform);
+                lineRendererPool.Add(lineRenderer);
             }
 
-            lineObj.name = $"Branch_{branch.Depth}_{_branches.IndexOf(branch)}";
-            LineRenderer lineRenderer = lineObj.GetComponent<LineRenderer>();
+            // Update LineRenderer properties
+            lineRenderer.gameObject.name = $"Branch_{branch.Depth}_{branchIndex}";
             lineRenderer.positionCount = branch.Points.Count;
             lineRenderer.SetPositions(branch.Points.ToArray());
 
+            Profiler.BeginSample("MathOps");
             float startWidth = baseWidth * Mathf.Pow(widthDecay, branch.Depth);
             float endWidth = startWidth * taperFactor;
             lineRenderer.widthMultiplier = startWidth;
             lineRenderer.widthCurve = AnimationCurve.Linear(0f, 1f, 1f, endWidth / startWidth);
+            Profiler.EndSample();
 
-            activeLineRenderers.Add(lineObj);
+            branchIndex++;
+        }
 
-            // Handle fruits
+        int fruitIndex = 0;
+        foreach (var branch in _branches)
+        {
             foreach (var f in branch.Fruits)
             {
-                Vector3 position = branch.Points[f.Position];
-
                 GameObject fruitObj;
-                if (fruitPool.Count > 0)
+                SpriteRenderer sr;
+
+                if (fruitIndex < fruitPool.Count && fruitPool[fruitIndex] != null)
                 {
-                    fruitObj = fruitPool[0];
-                    fruitPool.RemoveAt(0);
-                    fruitObj.SetActive(true);
+                    fruitObj = fruitPool[fruitIndex];
+                    sr = fruitObj.GetComponent<SpriteRenderer>();
                 }
                 else
                 {
                     fruitObj = Instantiate(fruit, transform);
+                    sr = fruitObj.GetComponent<SpriteRenderer>();
+                    if (fruitIndex >= fruitPool.Count)
+                    {
+                        fruitPool.Add(fruitObj);
+                    }
+                    else
+                    {
+                        fruitPool[fruitIndex] = fruitObj;
+                    }
                 }
 
-                fruitObj.transform.localPosition = position;
-                SpriteRenderer sr = fruitObj.GetComponent<SpriteRenderer>();
-                float size = f.Lerp * 0.5f;
-                fruitObj.transform.localScale = new Vector3(size, size, 1f);
-
-                if (f.FruitType == FruitType.Apple)
-                {
-                    sr.color = Color.red;
-                    fruitObj.name = "FruitA";
-                }
-                else if (f.FruitType == FruitType.Banana)
-                {
-                    sr.color = Color.yellow;
-                    fruitObj.name = "FruitB";
-                }
-
-                activeFruits.Add(fruitObj);
+                fruitObj.transform.localPosition = branch.Points[f.Position];
+                fruitObj.transform.localScale = Vector3.one * f.Lerp * 0.5f;
+                sr.color = f.FruitType == FruitType.Apple ? Color.red : Color.yellow;
+                sr.enabled = true;
+                fruitIndex++;
             }
         }
     }
@@ -263,26 +283,5 @@ public class TreeConstructor : MonoBehaviour
 
         _dna = GenerateDna();
         currentGeneration++;
-    }
-
-    private void DestroyPreviousTree()
-    {
-        // Deactivate and pool LineRenderers
-        foreach (var lr in activeLineRenderers)
-        {
-            lr.SetActive(false);
-            lineRendererPool.Add(lr);
-        }
-
-        activeLineRenderers.Clear();
-
-        // Deactivate and pool fruits
-        foreach (var fruit in activeFruits)
-        {
-            fruit.SetActive(false);
-            fruitPool.Add(fruit);
-        }
-
-        activeFruits.Clear();
     }
 }
